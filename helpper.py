@@ -1,12 +1,14 @@
+# -*- coding: UTF-8 -*-
+
 from codes import HAVE_ARGUMENT, EXTENDED_ARG, hasjrel, hasjabs, hasconst, hasname, haslocal,  hascompare, hasfree, CODES
 
-FORMAT_VALUE = CODES['FORMAT_VALUE']
-FORMAT_VALUE_CONVERTERS = (
-    (None, ''),
-    (str, 'str'),
-    (repr, 'repr'),
-    (ascii, 'ascii'),
-)
+# FORMAT_VALUE = CODES['FORMAT_VALUE']
+# FORMAT_VALUE_CONVERTERS = (
+#     (None, ''),
+#     (str, 'str'),
+#     (repr, 'repr'),
+#     (ascii, 'ascii'),
+# )
 
 COMPILER_FLAG_NAMES = {
      1: "OPTIMIZED",
@@ -64,7 +66,7 @@ def get_name_info(name_index, name_list):
        Otherwise returns the name index and its repr().
     """
     argval = name_index
-    if name_list is not None:
+    if name_list is not None and len(name_list) > 0:
         argval = name_list[name_index]
         argrepr = argval
     else:
@@ -156,28 +158,24 @@ def _unpack_opargs(code):
             arg = None
         yield (i, op, arg)
 
-def disassemble(co, lasti=-1, *, file=None):
-    """Disassemble a code object."""
-    cell_names = co.co_cellvars + co.co_freevars
-    linestarts = dict(find_line_starts(co))
-    _disassemble_bytes(co.co_code, lasti, co.co_varnames, co.co_names,
-                       co.co_consts, cell_names, linestarts, file=file)
+def findlabels(code):
+    """Detect all offsets in a byte code which are jump targets.
 
-def _disassemble_recursive(co, *, file=None, depth=None):
-    disassemble(co, file=file)
-    if depth is None or depth > 0:
-        if depth is not None:
-            depth = depth - 1
-        for x in co.co_consts:
-            if hasattr(x, 'co_code'):
-                print(file=file)
-                print("Disassembly of %r:" % (x,), file=file)
-                _disassemble_recursive(x, file=file, depth=depth)
+    Return the list of offsets.
 
-
-def _disassemble_str(source, **kwargs):
-    """Compile the source string, then disassemble the code object."""
-    _disassemble_recursive(handle_compile(source, '<dis>'), **kwargs)
+    """
+    labels = []
+    for offset, op, arg in _unpack_opargs(code):
+        if arg is not None:
+            if op in hasjrel:
+                label = offset + 2 + arg
+            elif op in hasjabs:
+                label = arg
+            else:
+                continue
+            if label not in labels:
+                labels.append(label)
+    return labels
 
 
 

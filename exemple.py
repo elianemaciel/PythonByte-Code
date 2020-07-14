@@ -521,6 +521,7 @@ class Bytecode:
 
     def dis(self):
         """Return a formatted view of the bytecode operations."""
+        import ipdb; ipdb.set_trace()
         co = self.codeobj
         if self.current_offset is not None:
             offset = self.current_offset
@@ -549,5 +550,13 @@ def _test():
     code = compile(source, args.infile.name, "exec")
     dis(code)
 
+# if __name__ == "__main__":
+#     # _test()
+
+def myfunc(alist):
+    return len(alist)
+
 if __name__ == "__main__":
-    _test()
+    bytecode = Bytecode(myfunc)
+    # bytecode.info()
+    bytecode.dis()
