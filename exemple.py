@@ -227,6 +227,7 @@ class Instruction(_Instruction):
         *mark_as_current* inserts a '-->' marker arrow as part of the line
         *offset_width* sets the width of the instruction offset field
         """
+        import ipdb; ipdb.set_trace()
         fields = []
         # Column: Source code line number
         if lineno_width:
@@ -521,7 +522,7 @@ class Bytecode:
 
     def dis(self):
         """Return a formatted view of the bytecode operations."""
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         co = self.codeobj
         if self.current_offset is not None:
             offset = self.current_offset
@@ -548,7 +549,7 @@ def _test():
     with args.infile as infile:
         source = infile.read()
     code = compile(source, args.infile.name, "exec")
-    dis(code)
+    dis(code) 
 
 # if __name__ == "__main__":
 #     # _test()
@@ -559,4 +560,4 @@ def myfunc(alist):
 if __name__ == "__main__":
     bytecode = Bytecode(myfunc)
     # bytecode.info()
-    bytecode.dis()
+    dis(myfunc)

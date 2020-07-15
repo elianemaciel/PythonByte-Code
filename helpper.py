@@ -1,14 +1,6 @@
 # -*- coding: UTF-8 -*-
 
-from codes import HAVE_ARGUMENT, EXTENDED_ARG, hasjrel, hasjabs, hasconst, hasname, haslocal,  hascompare, hasfree, CODES
-
-# FORMAT_VALUE = CODES['FORMAT_VALUE']
-# FORMAT_VALUE_CONVERTERS = (
-#     (None, ''),
-#     (str, 'str'),
-#     (repr, 'repr'),
-#     (ascii, 'ascii'),
-# )
+from codes import HAVE_ARGUMENT, EXTENDED_ARG, JREL, JABS, CONSTANTS, NAME, LOCAL,  COMPARE, FREE, CODES
 
 COMPILER_FLAG_NAMES = {
      1: "OPTIMIZED",
@@ -47,31 +39,6 @@ def handle_compile(source, name="<disassembly>"):
     except SyntaxError:
         c = compile(source, name, 'exec')
     return c
-
-def get_const_info(const_index, const_list):
-    """Helper to get optional details about const references
-       Returns the dereferenced constant and its repr if the constant
-       list is defined.
-       Otherwise returns the constant index and its repr().
-    """
-    argval = const_index
-    if const_list is not None:
-        argval = const_list[const_index]
-    return argval, repr(argval)
-
-def get_name_info(name_index, name_list):
-    """Helper to get optional details about named references
-       Returns the dereferenced name as both value and repr if the name
-       list is defined.
-       Otherwise returns the name index and its repr().
-    """
-    argval = name_index
-    if name_list is not None and len(name_list) > 0:
-        argval = name_list[name_index]
-        argrepr = argval
-    else:
-        argrepr = repr(argval)
-    return argval, argrepr
 
 
 def get_code_object(x):
@@ -127,56 +94,4 @@ def find_line_starts(code):
         lineno += line_incr
     if lineno != lastlineno:
         yield (addr, lineno)
-
-def findlabels(code):
-    """Detect all offsets in a byte code which are jump targets.
-
-    Return the list of offsets.
-
-    """
-    labels = []
-    for offset, op, arg in _unpack_opargs(code):
-        if arg is not None:
-            if op in hasjrel:
-                label = offset + 2 + arg
-            elif op in hasjabs:
-                label = arg
-            else:
-                continue
-            if label not in labels:
-                labels.append(label)
-    return labels
-
-def _unpack_opargs(code):
-    extended_arg = 0
-    for i in range(0, len(code), 2):
-        op = code[i]
-        if op >= HAVE_ARGUMENT:
-            arg = code[i+1] | extended_arg
-            extended_arg = (arg << 8) if op == EXTENDED_ARG else 0
-        else:
-            arg = None
-        yield (i, op, arg)
-
-def findlabels(code):
-    """Detect all offsets in a byte code which are jump targets.
-
-    Return the list of offsets.
-
-    """
-    labels = []
-    for offset, op, arg in _unpack_opargs(code):
-        if arg is not None:
-            if op in hasjrel:
-                label = offset + 2 + arg
-            elif op in hasjabs:
-                label = arg
-            else:
-                continue
-            if label not in labels:
-                labels.append(label)
-    return labels
-
-
-
 

@@ -5,11 +5,9 @@ import sys
 import types
 import collections
 
-from codes import CODES
-from codes import hasconst, hasname, hasjrel, hasjabs, haslocal, hascompare, hasfree
-from helpper import handle_compile, get_code_object, find_line_starts, pretty_flags, findlabels, _unpack_opargs, get_const_info, get_name_info
-
-
+from codes import CODES, OPERADORES, HAVE_ARGUMENT, EXTENDED_ARG,
+from helpper import handle_compile, get_code_object, find_line_starts, pretty_flags
+from Instruction import Instruction
 
 FORMAT_VALUE = CODES.get(155)
 FORMAT_VALUE_CONVERTERS = (
@@ -20,8 +18,6 @@ FORMAT_VALUE_CONVERTERS = (
 )
 MAKE_FUNCTION = CODES.get('MAKE_FUNCTION')
 MAKE_FUNCTION_FLAGS = ('defaults', 'kwdefaults', 'annotations', 'closure')
-_OPNAME_WIDTH = 20
-_OPARG_WIDTH = 5
 
 class GenerateBytecode:
     def __init__(self, x, first_line=None, current_offset=None):
@@ -37,10 +33,6 @@ class GenerateBytecode:
         self._original_object = x
         self.current_offset = current_offset
 
-    def __iter__(self):
-        co = self.codeobj
-        return self.get_instructions_bytes()
-
     def __repr__(self):
         return "{}({!r})".format(self.__class__.__name__,
                                  self._original_object)
@@ -49,9 +41,8 @@ class GenerateBytecode:
         """Return formatted information about the code object."""
         return self.printer_code_info()
 
-    def dis(self):
+    def generate_cod(self):
         """Return a formatted view of the bytecode operations."""
-        import ipdb; ipdb.set_trace()
         co = self.codeobj
         if self.current_offset is not None:
             offset = self.current_offset
@@ -71,46 +62,16 @@ class GenerateBytecode:
     
     def get_assemble_bytes(self, code, varnames, names, constants, cells, linestarts, 
             line_offset, file=None, lasti=-1):
-        # Omit the line number column entirely if we have no line number info
-        show_lineno = linestarts is not None
-        if show_lineno:
-            maxlineno = max(linestarts.values()) + self._line_offset
-            if maxlineno >= 1000:
-                lineno_width = len(str(maxlineno))
-            else:
-                lineno_width = 3
-        else:
-            lineno_width = 0
-        maxoffset = len(code) - 2
-        if maxoffset >= 10000:
-            offset_width = len(str(maxoffset))
-        else:
-            offset_width = 4
-        for instr in self.get_instructions_bytes(code, varnames, names,
-                                         constants, cells, linestarts,
-                                         line_offset=line_offset):
-            new_source_line = (show_lineno and
-                            instr.starts_line is not None and
-                            instr.offset > 0)
-            if new_source_line:
-                # pass
-                print(file=file)
-            is_current_instr = instr.offset == lasti
-            print(instr.get_assemble(lineno_width, is_current_instr, offset_width), file=file)
+  
+        for instr in self.get_instructions_bytes(
+                code, varnames, names, constants, cells, linestarts, line_offset=line_offset):
+            instr.printer_line()
 
     def get_instructions_bytes(self, code, varnames=None, names=None, constants=None,
                       cells=None, linestarts=None, line_offset=0):
-        """Iterate over the instructions in a bytecode string.
-
-        Generates a sequence of Instruction namedtuples giving the details of each
-        opcode.  Additional information about the code's runtime environment
-        (e.g. variable names, constants) can be specified using optional
-        arguments.
-
-        """
-        labels = findlabels(code)
+        labels = self.args_jumps(code)
         starts_line = None
-        for offset, op, arg in _unpack_opargs(code):
+        for offset, op, arg in get_args(code):
             if self._linestarts is not None:
                 starts_line = self._linestarts.get(offset, None)
                 if starts_line is not None:
@@ -119,26 +80,28 @@ class GenerateBytecode:
             argval = None
             argrepr = ''
             if arg is not None:
-                #  Set argval to the dereferenced value of the argument when
-                #  available, and argrepr to the string representation of argval.
-                #    _disassemble_bytes needs the string repr of the
-                #    raw name index for LOAD_GLOBAL, LOAD_CONST, etc.
                 argval = arg
-                if op in hasconst:
+                if op == 100: # LOAD_CONST
                     argval, argrepr = get_const_info(arg, constants)
-                elif op in hasname:
-                    argval, argrepr = get_name_info(arg, names)
-                elif op in hasjrel:
-                    argval = offset + 2 + arg
-                    argrepr = "to " + repr(argval)
-                elif op in haslocal:
-                    argval, argrepr = get_name_info(arg, varnames)
-                elif op in hascompare:
-                    # argval = cmp_op[arg]
-                    # argrepr = argval
+                    if constants is not None:
+                        argval = constants[const_index]
+                        argrepr = repr(argval)
+                elif op [116, 90, 101, 160]: # LOAD_GLOBAL, LOAD_METHOD, STORE_NAME, LOAD_NAME
+                    if names is not None and len(names) > 0:
+                        argval = names[arg]
+                        argrepr = argval
+                    else:
+                        argrepr = repr(argval)
+                elif op == 124 or op == 125: # LOAD_FAST, STORE_FAST
+                    if varnames is not None and len(varnames) > 0:
+                        argval = varnames[arg]
+                        argrepr = argval
+                    else:
+                        argrepr = repr(argval)
+                elif op == 107: # COMPARE_OP
+                    argval = OPERADORES[arg]
+                    argrepr = argval
                     pass
-                elif op in hasfree:
-                    argval, argrepr = get_name_info(arg, cells)
                 elif op == FORMAT_VALUE:
                     argval, argrepr = FORMAT_VALUE_CONVERTERS[arg & 0x3]
                     argval = (argval, bool(arg & 0x4))
@@ -149,13 +112,36 @@ class GenerateBytecode:
                 elif op == MAKE_FUNCTION:
                     argrepr = ', '.join(s for i, s in enumerate(MAKE_FUNCTION_FLAGS)
                                         if arg & (1<<i))
-            print(op)
-            print(CODES.get(op))
             yield Instruction(CODES.get(op), op,
-                              arg, argval, argrepr,
+                              arg, argval, argrepr, 
                               offset, starts_line, is_jump_target)
 
+    def get_args(self, code):
+        extended_arg = 0
+        for i in range(0, len(code), 2):
+            op = code[i]
+            if op >= HAVE_ARGUMENT:
+                arg = code[i+1] | extended_arg
+                extended_arg = (arg << 8) if op == EXTENDED_ARG else 0
+            else:
+                arg = None
+            yield (i, op, arg)
+    
+    def args_jumps(self, code):
+        jumps = []
+        for offset, op, arg in self.get_args(code):
+            if arg is not None:
+                if op == 110 or op == 93: # JUMP_FORWARD, FOR_ITER
+                    label = offset + 2 + arg
+                elif op == 113 or op == 114: # JUMP_ABSOLUTE or POP_JUMP_IF_FALSE
+                    label = arg
+                else:
+                    continue
+                if label not in labels:
+                    jumps.append(label)
+        return jumps
    
+
     def printer_code_info(self):
         print("Name:              %s" % self.codeobj.co_name)
         print("Filename:          %s" % self.codeobj.co_filename)
@@ -190,7 +176,9 @@ class GenerateBytecode:
         """Disassemble a code object."""
         cell_names = self.codeobj.co_cellvars + self.codeobj.co_freevars
         linestarts = dict(find_line_starts(self.codeobj))
-        self.get_assemble_bytes()
+        self.get_assemble_bytes(self.codeobj.co_code, self.codeobj.co_varnames, self.codeobj.co_names,     
+            self.codeobj.co_consts, cell_names, linestarts, 
+            file=file)
 
     def get_assemble_recusive(self, x, file=None, depth=None):
         self.get_assemble(file=file)
@@ -203,78 +191,10 @@ class GenerateBytecode:
                     print("Disassembly of %r:" % (x,))
                     self.get_assemble_recusive(x, depth=depth)
 
-    def assemble_str(self, source, **kwargs):
-        """Compile the source string, then disassemble the code object."""
-        self.get_assemble_recusive(handle_compile(source, '<dis>'), **kwargs)
-
-class Instruction:
-    """Details for a bytecode operation
-
-       Defined fields:
-         opname - human readable name for operation
-         opcode - numeric code for operation
-         arg - numeric argument to operation (if any), otherwise None
-         argval - resolved arg value (if known), otherwise same as arg
-         argrepr - human readable description of operation argument
-         offset - start index of operation within bytecode sequence
-         starts_line - line started by this opcode (if any), otherwise None
-         is_jump_target - True if other code jumps to here, otherwise False
-    """
-
-    def __init__(self, opname="", opcode="", arg="", argval="", argrepr="", offset="", starts_line="",      is_jump_target=""):
-
-        self.opname = opname
-        self.opcode = opcode
-        self.arg = arg
-        self.argval = argval
-        self.argrepr = argrepr
-        self.offset = offset
-        self.starts_line = starts_line
-        self.is_jump_target = is_jump_target
-
-    def get_assemble(self, lineno_width=3, mark_as_current=False, offset_width=4):
-        """Format instruction details for inclusion in disassembly output
-
-        *lineno_width* sets the width of the line number field (0 omits it)
-        *mark_as_current* inserts a '-->' marker arrow as part of the line
-        *offset_width* sets the width of the instruction offset field
-        """
-        fields = []
-        # Column: Source code line number
-        if lineno_width:
-            if self.starts_line is not None:
-                lineno_fmt = "%%%dd" % lineno_width
-                fields.append(lineno_fmt % self.starts_line)
-            else:
-                fields.append(' ' * lineno_width)
-        # Column: Current instruction indicator
-        if mark_as_current:
-            fields.append('-->')
-        else:
-            fields.append('   ')
-        # Column: Jump target marker
-        if self.is_jump_target:
-            fields.append('>>')
-        else:
-            fields.append('  ')
-        # Column: Instruction offset from start of code sequence
-        fields.append(repr(self.offset).rjust(offset_width))
-        # Column: Opcode name
-        print(self.opname)
-        fields.append(self.opname.ljust(_OPNAME_WIDTH))
-        # Column: Opcode argument
-        if self.arg is not None:
-            fields.append(repr(self.arg).rjust(_OPARG_WIDTH))
-            # Column: Opcode argument details
-            if self.argrepr:
-                fields.append('(' + self.argrepr + ')')
-        return ' '.join(fields).rstrip()
-
-
 def myfunc(alist):
     return len(alist)
 
 if __name__ == "__main__":
     bytecode = GenerateBytecode(myfunc)
-    bytecode.info()
-    bytecode.dis()
+    # bytecode.info()
+    bytecode.generate_cod()
