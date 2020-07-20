@@ -1,0 +1,7 @@
+aa = 10 + 10
+
+if aa > 0:
+    print("teste")
+
+for i in range(10):
+    print(i)

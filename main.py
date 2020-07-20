@@ -5,8 +5,8 @@ import sys
 import types
 import collections
 
-from codes import CODES, OPERADORES, HAVE_ARGUMENT, EXTENDED_ARG,
-from helpper import handle_compile, get_code_object, find_line_starts, pretty_flags
+from codes import CODES, OPERADORES, HAVE_ARGUMENT, EXTENDED_ARG
+from helpper import handle_compile, find_line_starts
 from Instruction import Instruction
 
 FORMAT_VALUE = CODES.get(155)
@@ -21,28 +21,41 @@ MAKE_FUNCTION_FLAGS = ('defaults', 'kwdefaults', 'annotations', 'closure')
 
 class GenerateBytecode:
     def __init__(self, x, first_line=None, current_offset=None):
-        self.codeobj = co = get_code_object(x)
+        self.codeobj = co = self.get_code_object(x)
         if first_line is None:
             self.first_line = co.co_firstlineno
-            self._line_offset = 0
+            self.line_offset = 0
         else:
             self.first_line = first_line
-            self._line_offset = first_line - co.co_firstlineno
-        self._cell_names = co.co_cellvars + co.co_freevars
-        self._linestarts = dict(find_line_starts(co))
-        self._original_object = x
+            self.line_offset = first_line - co.co_firstlineno
+        self.cell_names = co.co_cellvars + co.co_freevars
+        self.linestarts = dict(find_line_starts(co))
+        self.original_object = x
         self.current_offset = current_offset
 
     def __repr__(self):
-        return "{}({!r})".format(self.__class__.__name__,
-                                 self._original_object)
-
-    def info(self):
-        """Return formatted information about the code object."""
-        return self.printer_code_info()
+        return "{}({!r})".format(
+            self.__class__.__name__,
+            self.original_object
+        )
+    
+    def get_code_object(self, code):
+        if hasattr(code, '__func__'):
+            code = code.__func__
+        if hasattr(code, '__code__'):
+            code = code.__code__
+        elif hasattr(code, 'gi_code'):
+            code = code.gi_code
+        elif hasattr(code, 'ag_code'):
+            code = code.ag_code
+        elif hasattr(code, 'cr_code'):
+            code = code.cr_code
+        if isinstance(code, str):
+            code = handle_compile(code)
+        if hasattr(code, 'co_code'):
+            return code
 
     def generate_cod(self):
-        """Return a formatted view of the bytecode operations."""
         co = self.codeobj
         if self.current_offset is not None:
             offset = self.current_offset
@@ -52,9 +65,9 @@ class GenerateBytecode:
             self.get_assemble_bytes(
                 co.co_code, varnames=co.co_varnames,
                 names=co.co_names, constants=co.co_consts,
-                cells=self._cell_names,
-                linestarts=self._linestarts,
-                line_offset=self._line_offset,
+                cells=self.cell_names,
+                linestarts=self.linestarts,
+                line_offset=self.line_offset,
                 file=output,
                 lasti=offset
             )
@@ -71,24 +84,23 @@ class GenerateBytecode:
                       cells=None, linestarts=None, line_offset=0):
         labels = self.args_jumps(code)
         starts_line = None
-        for offset, op, arg in get_args(code):
-            if self._linestarts is not None:
-                starts_line = self._linestarts.get(offset, None)
+        for offset, op, arg in self.get_args(code):
+            if self.linestarts is not None:
+                starts_line = self.linestarts.get(offset, None)
                 if starts_line is not None:
-                    starts_line += self._line_offset
+                    starts_line += self.line_offset
             is_jump_target = offset in labels
             argval = None
             argrepr = ''
             if arg is not None:
                 argval = arg
                 if op == 100: # LOAD_CONST
-                    argval, argrepr = get_const_info(arg, constants)
                     if constants is not None:
-                        argval = constants[const_index]
+                        argval = constants[arg]
                         argrepr = repr(argval)
-                elif op [116, 90, 101, 160]: # LOAD_GLOBAL, LOAD_METHOD, STORE_NAME, LOAD_NAME
+                elif op in [116, 90, 101, 160]: # LOAD_GLOBAL, LOAD_METHOD, STORE_NAME, LOAD_NAME
                     if names is not None and len(names) > 0:
-                        argval = names[arg]
+                        argval = nam    es[arg]
                         argrepr = argval
                     else:
                         argrepr = repr(argval)
@@ -137,48 +149,23 @@ class GenerateBytecode:
                     label = arg
                 else:
                     continue
-                if label not in labels:
+                if label not in jumps:
                     jumps.append(label)
         return jumps
    
-
-    def printer_code_info(self):
-        print("Name:              %s" % self.codeobj.co_name)
-        print("Filename:          %s" % self.codeobj.co_filename)
-        print("Argument count:    %s" % self.codeobj.co_argcount)
-        print("Kw-only arguments: %s" % self.codeobj.co_kwonlyargcount)
-        print("Number of locals:  %s" % self.codeobj.co_nlocals)
-        print("Stack size:        %s" % self.codeobj.co_stacksize)
-        print("Flags:             %s" % pretty_flags(self.codeobj.co_flags))
-        if self.codeobj.co_consts:
-            print("Constants:")
-            for i_c in enumerate(self.codeobj.co_consts):
-                print("%4d: %r" % i_c)
-        if self.codeobj.co_names:
-            print("Names:")
-            for i_n in enumerate(self.codeobj.co_names):
-                print("%4d: %s" % i_n)
-        if self.codeobj.co_varnames:
-            print("Variable names:")
-            for i_n in enumerate(self.codeobj.co_varnames):
-                print("%4d: %s" % i_n)
-        if self.codeobj.co_freevars:
-            print("Free variables:")
-            for i_n in enumerate(self.codeobj.co_freevars):
-                print("%4d: %s" % i_n)
-        if self.codeobj.co_cellvars:
-            print("Cell variables:")
-            for i_n in enumerate(self.codeobj.co_cellvars):
-                print("%4d: %s" % i_n)
-        return
-    
     def get_assemble(self, lasti=-1, file=None):
-        """Disassemble a code object."""
         cell_names = self.codeobj.co_cellvars + self.codeobj.co_freevars
         linestarts = dict(find_line_starts(self.codeobj))
-        self.get_assemble_bytes(self.codeobj.co_code, self.codeobj.co_varnames, self.codeobj.co_names,     
-            self.codeobj.co_consts, cell_names, linestarts, 
-            file=file)
+        self.get_assemble_bytes(
+            self.codeobj.co_code,
+            self.codeobj.co_varnames,
+            self.codeobj.co_names,
+            self.codeobj.co_consts,
+            cell_names,
+            linestarts,
+            line_offset=self.line_offset,
+            file=file
+        )
 
     def get_assemble_recusive(self, x, file=None, depth=None):
         self.get_assemble(file=file)
@@ -195,6 +182,9 @@ def myfunc(alist):
     return len(alist)
 
 if __name__ == "__main__":
-    bytecode = GenerateBytecode(myfunc)
-    # bytecode.info()
+    arquivocode = "code.txt"
+    filecode = open(arquivocode)
+    source = filecode.read()
+    code = compile(source, "code.txt", "exec")
+    bytecode = GenerateBytecode(code)
     bytecode.generate_cod()

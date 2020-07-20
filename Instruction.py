@@ -23,8 +23,11 @@ class Instruction:
             line.append("%3d" % self.starts_line)
         else:
             line.append('   ')
-        line.append(str(self.offset).rjust(4))        
-        line.append(str(self.opname).ljust(20))
+        line.append(str(self.offset).rjust(4))
+        if (self.opname):     
+            line.append(str(self.opname).ljust(20))
+        else:
+            line.append(' '.ljust(20))
         if self.arg is not None:
             line.append(str(self.arg).rjust(5))
             if self.argrepr:
